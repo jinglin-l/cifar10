@@ -17,12 +17,10 @@ from datetime import datetime
 # load and normalize CIFAR10 dataset
 
 transform = transforms.Compose( # Compose chains several transforms together
-    [transforms.ToTensor(), # convert a PIL to tensor, pixel values are scaled to [0,1] by
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))] # normalize tensors values from [0,1] to [-1,1]
-)
+    [transforms.ToTensor(), # convert a PIL to tensor, pixel values are scaled to [0,1] by dividing by 255
+     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # normalize tensors values from [0,1] to [-1,1]
 
-# how does one choose an appropriate batch size?
-batch_size = 4
+
 
 # training set (how big?)
 training_set = torchvision.datasets.CIFAR10(root='./data', train=True, download = True, transform=transform)
@@ -44,45 +42,55 @@ def show_img(img):
     print(f'npimg.shape after transpose: {npimg_transposed.shape}') # (C,H,W)
     plt.show()
 
-# define a Convolutional Neural Network
+# define a Neural Network
+# class Net(nn.Module):
+#     def __init__(self):
+#         super().__init__()
+#         # neel told me this should be a cone
+#         self.fc1 = nn.Linear(32 * 32 * 3, 512)
+#         self.fc2 = nn.Linear(512, 256)
+#         self.fc3 = nn.Linear(256, 10)  # last out_feature layer should correspond to how many classes we have
+#
+#
+#     def forward(self, x):
+#         # (B, 32, 32)
+#         x = torch.flatten(x, 1) # (B, 32*32*3) flatten dims of image C * H * W
+#         x = F.relu(self.fc1(x))
+#         x = F.relu(self.fc2(x))
+#         x = self.fc3(x)
+#         return x
+
+
+# define a CNN
+
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(32*32*3, 3000)
-        self.fc2 = nn.Linear(3000, 1000)
-        self.fc3 = nn.Linear(1000, 10)
+        self.conv1 = nn.Conv2d(3, 6, 5)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(6, 16, 5)
+        self.fc1 = nn.Linear(16 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
 
     def forward(self, x):
-        # (B, 32, 32)
-        x = torch.flatten(x, 1) # (B, 32*32*3) flatten dims of image C * H * W
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = torch.flatten(x, 1) # flatten all dimensions except batch
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
 
 
-
-
 if __name__ == "__main__":
     # parameters for this training run
-    learning_rate = 0.001
-    batch_size = 4
-    num_epochs = 2
-
-    # file redirect model training metrics to a file
+    learning_rate = 0.0001 # usually between 1e-3 (7b) and 1e-5 (128b), use smaller values for larger datasets. larger values learn faster but may be more inaccurate
+    batch_size = 8 # should be a power of 2
+    num_epochs = 2 # how many times to loop through the dataset
 
     # Create experiment identifier
-    exp_name = f"lr{lr}_bs{batch_size}_ep{num_epochs}_{datetime.now().strftime('%H%M%S')}"
-
-    with open(f"results_{exp_name}.txt", "w") as f:
-        f.write(f"Learning rate: {learning_rate}\n")
-        f.write(f"Batch size: {batch_size}\n")
-        f.write(f"Number of epochs: {num_epochs}\n")
-        f.write(f"Accuracy: {accuracy}\n")
-        f.write(f"Final Loss: {final_loss}\n")
-
-
-
+    exp_name = f"lr{learning_rate}_bs{batch_size}_ep{num_epochs}_{datetime.now().strftime('%H%M%S')}"
 
     train_loader = torch.utils.data.DataLoader(training_set, batch_size=batch_size, shuffle=True, num_workers=2)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
@@ -104,32 +112,73 @@ if __name__ == "__main__":
 
     net = Net()
 
+    device = torch.device("mps")
+    net.to(device)
+
     # define loss function and optimizer
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    criterion = nn.CrossEntropyLoss() # loss function
+    optimizer = optim.AdamW(net.parameters(), lr=learning_rate) # optimizer
 
     # train the network
 
-    for epoch in range(2): # loop over the dataset multiple times
-        running_loss = 0.0
-        for i, data in enumerate(train_loader, 0):
+    final_loss = 0.0
+    val_batch = next(iter(test_loader)) # get a single batch from the test set for validation
+    loss_record = []
+    val_loss_record = []
+
+    # Initialize gradient tracking dictionaries
+    grad_records = {}
+    for name, param in net.named_parameters():
+        grad_records[name] = []
+
+    for epoch in range(num_epochs): # loop over the dataset multiple times
+        for i, data in enumerate(train_loader):
             # get the inputs; data is a list of [inputs, labels]
             inputs, labels = data
+            optimizer.zero_grad() # zero out the gradient matrix, otherwise they will accumulate between batches
 
             # zero the parameter gradients
-            optimizer.zero_grad()
-            # forward + backward + optimize
-            outputs = net(inputs)
+            inputs, labels = inputs.to(device), labels.to(device)
+            outputs = net(inputs) # forward pass
+            loss = criterion(outputs, labels) # compute loss
+            loss.backward() # backward pass, compute gradients
 
-            loss = criterion(outputs, labels)
-            loss.backward()
-            optimizer.step()
+            # Track gradient magnitudes every 100 batches
+            if i % 100 == 0:
+                for name, param in net.named_parameters():
+                    if param.grad is not None:
+                        grad_norm = param.grad.norm().item()
+                        grad_records[name].append(grad_norm)
+
+            optimizer.step() # apply gradients & update weights
+
+
+            # implementing batches by ourself (not recommended)
+            # # forward + backward + optimize
+            # for i in range(inputs.size(0)):
+            #     outputs = net(inputs[i])
+            #
+            #     loss = criterion(outputs, labels[i])
+            #     loss.backward() # calculates the gradients, adds onto past gradients, i.e. accumulates gradients
+            # optimizer.step() # applies the gradients that were accumulated with .backward()
+            # optimizer.zero_grad() # zeroes the gradients, otherwise they will accumulate between batches
+
+
 
             # print statistics
-            running_loss += loss.item()
-            if i % 2000 == 1999:    # print every 2000 mini-batches
-                print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
-                running_loss = 0.0
+            final_loss = loss.item()  # capture the last loss value
+            if i % 20 == 0:    # print every 20th batch
+                inputs, labels = val_batch
+                inputs, labels = inputs.to(device), labels.to(device)
+                outputs = net(inputs)
+                val_loss = criterion(outputs, labels)
+
+                val_loss = val_loss.item()
+                val_loss_record.append(val_loss)
+                loss_record.append(final_loss)
+
+                print(f'[{epoch + 1}, {i + 1:5d}] loss: {final_loss :.3f}')
+                print(f'[{epoch + 1}, {i + 1:5d}] val_loss: {val_loss:.3f}')
 
     print('Finished Training')
 
@@ -139,11 +188,70 @@ if __name__ == "__main__":
     with torch.no_grad(): # no need to track gradients since we are not training
         for data in test_loader:
             images, labels = data
+            images, labels = images.to(device), labels.to(device)  # move test data to device
             outputs = net(images)
             _, predicted = torch.max(outputs.data, 1) # get the index of the max log-probability
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
-    print(f'Accuracy of the network on the 10000 test images: {100 * correct / total} %')
+
+    accuracy = 100 * correct / total
+    print(f'Accuracy of the network on the 10000 test images: {accuracy} %')
+
+    # Write results to file
+    with open(f"results_{exp_name}.txt", "w") as f:
+        f.write(f"Learning rate: {learning_rate}\n")
+        f.write(f"Batch size: {batch_size}\n")
+        f.write(f"Number of epochs: {num_epochs}\n")
+        f.write(f"Accuracy: {accuracy:.2f}%\n")
+        f.write(f"Final Loss: {final_loss:.6f}\n")
+
+    # Plot loss curves
+    plt.figure()
+    plt.plot(loss_record, label='Training Loss')
+    plt.plot(val_loss_record, label='Validation Loss')
+    plt.xlabel('Iteration (x20)')
+    plt.ylabel('Loss')
+    plt.title('Loss Curves')
+    plt.legend()
+    plt.savefig(f"loss_curve_{exp_name}.png")
+
+    # Plot gradient magnitudes
+    plt.figure(figsize=(12, 8))
+    for name, grad_values in grad_records.items():
+        if len(grad_values) > 0:
+            plt.plot(grad_values, label=name, marker='o', markersize=3)
+    plt.xlabel('Iteration (x100)')
+    plt.ylabel('Gradient Magnitude (L2 Norm)')
+    plt.title('Gradient Magnitudes Over Training')
+    plt.legend(loc='best')
+    plt.grid(True, alpha=0.3)
+    plt.savefig(f"gradient_magnitudes_{exp_name}.png")
+
+    # Plot gradient magnitudes separately for weights and biases
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Plot weights
+    for name, grad_values in grad_records.items():
+        if 'weight' in name and len(grad_values) > 0:
+            ax1.plot(grad_values, label=name, marker='o', markersize=3)
+    ax1.set_xlabel('Iteration (x100)')
+    ax1.set_ylabel('Gradient Magnitude (L2 Norm)')
+    ax1.set_title('Weight Gradient Magnitudes')
+    ax1.legend(loc='best')
+    ax1.grid(True, alpha=0.3)
+
+    # Plot biases
+    for name, grad_values in grad_records.items():
+        if 'bias' in name and len(grad_values) > 0:
+            ax2.plot(grad_values, label=name, marker='o', markersize=3)
+    ax2.set_xlabel('Iteration (x100)')
+    ax2.set_ylabel('Gradient Magnitude (L2 Norm)')
+    ax2.set_title('Bias Gradient Magnitudes')
+    ax2.legend(loc='best')
+    ax2.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    plt.savefig(f"gradient_magnitudes_split_{exp_name}.png")
 
 
 
