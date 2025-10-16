@@ -2,7 +2,6 @@
 import torch
 import torchvision
 import torchvision.transforms as transforms
-import matplotlib.pyplot as plt
 import numpy as np
 
 import torch.nn as nn
@@ -33,15 +32,6 @@ test_set = torchvision.datasets.CIFAR10(root='./data', train=False, download = T
 classes = ('plane', 'car', 'bird', 'cat',
            'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
-def show_img(img):
-    global npimg
-    img = img / 2 + 0.5     # unnormalize from [-1,1] to [0,1]
-    npimg = img.numpy()   # convert from tensor to numpy array
-    print(f'npimg.shape before transpose: {npimg.shape}') # (C,H,W)
-    npimg_transposed = np.transpose(npimg, (1,2,0)) # convert from (C,H,W) to (H,W,C)
-    print(f'npimg.shape after transpose: {npimg_transposed.shape}') # (C,H,W)
-    plt.show()
-
 # define a Neural Network
 # class Net(nn.Module):
 #     def __init__(self):
@@ -66,28 +56,38 @@ def show_img(img):
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
+
+        self.conv1 = nn.Conv2d(3, 6, 8)
+        self.conv2 = nn.Conv2d(6, 6, 8)
+        self.conv3 = nn.Conv2d(6, 6, 8)
+        self.conv4 = nn.Conv2d(6, 6, 2)
+        self.conv5 = nn.Conv2d(6, 6, 2)
+        self.fc1 = nn.Linear(6 * 9 * 9, 2000)
+        self.fc2 = nn.Linear(2000, 84)
         self.fc3 = nn.Linear(84, 10)
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1) # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
+        # (B, 3, 32, 32)
+        x = F.relu(self.conv1(x)) # (B, 6, 25, 25)
+        x = F.relu(self.conv2(x)) # (B, 16, 18, 18)
+        x = F.relu(self.conv3(x)) # (B, 32, 15, 15)
+        x = F.relu(self.conv4(x)) # (B, 64, 12, 12)
+        x = F.relu(self.conv5(x)) # (B, 128, 9, 9)
+        x = torch.flatten(x, 1) # flatten all dimensions except batch (B, 16*5*5)
+        x = F.relu(self.fc1(x)) # (B, 120)
         x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = self.fc3(x) # (B, 10)
         return x
 
 
 if __name__ == "__main__":
     # parameters for this training run
-    learning_rate = 0.0001 # usually between 1e-3 (7b) and 1e-5 (128b), use smaller values for larger datasets. larger values learn faster but may be more inaccurate
-    batch_size = 8 # should be a power of 2
-    num_epochs = 2 # how many times to loop through the dataset
+    learning_rate = 0.001 # usually between 1e-3 (7b) and 1e-5 (128b), use smaller values for larger datasets. larger values learn faster but may be more inaccurate
+    batch_size = 32 # should be a power of 2
+    num_epochs = 15 # how many times to loop through the dataset
+    nn_type = "cnn"
+    date = datetime.now().strftime('%Y-%m-%d%H:%M:%S')
+    experiment_name = "adding scheduler"
 
     # Create experiment identifier
     exp_name = f"lr{learning_rate}_bs{batch_size}_ep{num_epochs}_{datetime.now().strftime('%H%M%S')}"
@@ -104,9 +104,11 @@ if __name__ == "__main__":
     print(f"batch shape:" , images.shape) # (batch size, number of channels (RGB), height, width) (4, 3, 32, 32)
     print(f"single image shape:" , images[0].shape) # (channels, height, width) (3, 32, 32)
     print(f"flattened size:" , images[0].numel()) # C*H*W
+    #mean and std of the first image
+    print(f"mean: {images[0].mean():.3f}, std: {images[0].std():.3f}")
 
-    # show images
-    show_img(torchvision.utils.make_grid(images)) # make a grid from batch
+
+
     # print labels
     print(' '.join(f'{classes[labels[j]]:5s}' for j in range(batch_size)))
 
@@ -118,6 +120,9 @@ if __name__ == "__main__":
     # define loss function and optimizer
     criterion = nn.CrossEntropyLoss() # loss function
     optimizer = optim.AdamW(net.parameters(), lr=learning_rate) # optimizer
+
+    # define a learning rate scheduler
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=3, factor=0.5)
 
     # train the network
 
@@ -152,7 +157,6 @@ if __name__ == "__main__":
 
             optimizer.step() # apply gradients & update weights
 
-
             # implementing batches by ourself (not recommended)
             # # forward + backward + optimize
             # for i in range(inputs.size(0)):
@@ -167,7 +171,15 @@ if __name__ == "__main__":
 
             # print statistics
             final_loss = loss.item()  # capture the last loss value
-            if i % 20 == 0:    # print every 20th batch
+            if i % 20 == 0:
+                # train accuracy
+                _, predicted = torch.max(outputs.data, 1) # get the index of the max
+                total = labels.size(0)
+                correct = (predicted == labels).long().sum().item()
+                train_accuracy = 100 * correct / total
+
+
+                # print every 20th batch
                 inputs, labels = val_batch
                 inputs, labels = inputs.to(device), labels.to(device)
                 outputs = net(inputs)
@@ -176,9 +188,15 @@ if __name__ == "__main__":
                 val_loss = val_loss.item()
                 val_loss_record.append(val_loss)
                 loss_record.append(final_loss)
+                # val accuracy
+                _, predicted = torch.max(outputs.data, 1) # get the index of the max
+                total = labels.size(0)
+                correct = (predicted == labels).sum().item()
+                val_accuracy = 100 * correct / total
 
-                print(f'[{epoch + 1}, {i + 1:5d}] loss: {final_loss :.3f}')
-                print(f'[{epoch + 1}, {i + 1:5d}] val_loss: {val_loss:.3f}')
+                print(f'[{epoch + 1}, {i + 1:5d}] loss: {final_loss :.3f} val_loss: {val_loss:.3f} train_acc: {train_accuracy:.2f}% val_acc: {val_accuracy:.2f}% lr: {optimizer.param_groups[0]["lr"]:.6f}')
+
+        scheduler.step(val_loss) # step the scheduler based on validation loss
 
     print('Finished Training')
 
@@ -202,59 +220,10 @@ if __name__ == "__main__":
         f.write(f"Learning rate: {learning_rate}\n")
         f.write(f"Batch size: {batch_size}\n")
         f.write(f"Number of epochs: {num_epochs}\n")
+        f.write(f"NN type: {nn_type}\n")
         f.write(f"Accuracy: {accuracy:.2f}%\n")
         f.write(f"Final Loss: {final_loss:.6f}\n")
-
-    # Plot loss curves
-    plt.figure()
-    plt.plot(loss_record, label='Training Loss')
-    plt.plot(val_loss_record, label='Validation Loss')
-    plt.xlabel('Iteration (x20)')
-    plt.ylabel('Loss')
-    plt.title('Loss Curves')
-    plt.legend()
-    plt.savefig(f"loss_curve_{exp_name}.png")
-
-    # Plot gradient magnitudes
-    plt.figure(figsize=(12, 8))
-    for name, grad_values in grad_records.items():
-        if len(grad_values) > 0:
-            plt.plot(grad_values, label=name, marker='o', markersize=3)
-    plt.xlabel('Iteration (x100)')
-    plt.ylabel('Gradient Magnitude (L2 Norm)')
-    plt.title('Gradient Magnitudes Over Training')
-    plt.legend(loc='best')
-    plt.grid(True, alpha=0.3)
-    plt.savefig(f"gradient_magnitudes_{exp_name}.png")
-
-    # Plot gradient magnitudes separately for weights and biases
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-
-    # Plot weights
-    for name, grad_values in grad_records.items():
-        if 'weight' in name and len(grad_values) > 0:
-            ax1.plot(grad_values, label=name, marker='o', markersize=3)
-    ax1.set_xlabel('Iteration (x100)')
-    ax1.set_ylabel('Gradient Magnitude (L2 Norm)')
-    ax1.set_title('Weight Gradient Magnitudes')
-    ax1.legend(loc='best')
-    ax1.grid(True, alpha=0.3)
-
-    # Plot biases
-    for name, grad_values in grad_records.items():
-        if 'bias' in name and len(grad_values) > 0:
-            ax2.plot(grad_values, label=name, marker='o', markersize=3)
-    ax2.set_xlabel('Iteration (x100)')
-    ax2.set_ylabel('Gradient Magnitude (L2 Norm)')
-    ax2.set_title('Bias Gradient Magnitudes')
-    ax2.legend(loc='best')
-    ax2.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    plt.savefig(f"gradient_magnitudes_split_{exp_name}.png")
-
-
-
+        f.write(f"Date: {date}\n")
 
 
 
