@@ -57,23 +57,25 @@ class Net(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.conv1 = nn.Conv2d(3, 6, 8)
-        self.conv2 = nn.Conv2d(6, 6, 8)
-        self.conv3 = nn.Conv2d(6, 6, 8)
-        self.conv4 = nn.Conv2d(6, 6, 2)
-        self.conv5 = nn.Conv2d(6, 6, 2)
-        self.fc1 = nn.Linear(6 * 9 * 9, 2000)
+        self.conv1 = nn.Conv2d(3, 32, 3) # convolution layyer will decreae the image size (called spatial dim) by a certain fixed amount at each layer. that fixed amount can be calculated using some formula
+        self.conv2 = nn.Conv2d(32, 64, 3) # out channels should increase as we go deeper, not sure why or how much at each step and overall
+        self.conv3 = nn.Conv2d(64, 64, 3)
+        self.conv4 = nn.Conv2d(64, 128, 3)
+        self.conv5 = nn.Conv2d(128, 128, 3)
+        self.fc1 = nn.Linear(128 * 22 * 22, 2000)   # nn.Linear(of parameters from conv layers, out_features)
         self.fc2 = nn.Linear(2000, 84)
-        self.fc3 = nn.Linear(84, 10)
+        self.fc3 = nn.Linear(84, 10)  # last out_feature layer should correspond to how many classes we have
 
     def forward(self, x):
         # (B, 3, 32, 32)
-        x = F.relu(self.conv1(x)) # (B, 6, 25, 25)
-        x = F.relu(self.conv2(x)) # (B, 16, 18, 18)
-        x = F.relu(self.conv3(x)) # (B, 32, 15, 15)
-        x = F.relu(self.conv4(x)) # (B, 64, 12, 12)
-        x = F.relu(self.conv5(x)) # (B, 128, 9, 9)
+        x = F.relu(self.conv1(x)) # (B, 8, 30, 30)
+        x = F.relu(self.conv2(x)) # (B, 16, 28, 28)
+        x = F.relu(self.conv3(x)) # (B, 32, 26, 26)
+        x = F.relu(self.conv4(x)) # (B, 64, 24, 24)
+        x = F.relu(self.conv5(x)) # (B, 128, 22, 22)
+        # print("shape before flatten", x.shape)
         x = torch.flatten(x, 1) # flatten all dimensions except batch (B, 16*5*5)
+        # print("shape after flatten", x.shape)
         x = F.relu(self.fc1(x)) # (B, 120)
         x = F.relu(self.fc2(x))
         x = self.fc3(x) # (B, 10)
