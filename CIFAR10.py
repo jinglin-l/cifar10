@@ -56,29 +56,27 @@ classes = ('plane', 'car', 'bird', 'cat',
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
+        self.pool = nn.MaxPool2d(2, 2) # kernel size, stride
 
-        self.conv1 = nn.Conv2d(3, 32, 3) # convolution layyer will decreae the image size (called spatial dim) by a certain fixed amount at each layer. that fixed amount can be calculated using some formula
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3) # convolution layyer will decrease the image size (called spatial dim) by a certain fixed amount at each layer. that fixed amount can be calculated using some formula that depends on kernel size, stride, padding
         self.conv2 = nn.Conv2d(32, 64, 3) # out channels should increase as we go deeper, not sure why or how much at each step and overall
         self.conv3 = nn.Conv2d(64, 64, 3)
         self.conv4 = nn.Conv2d(64, 128, 3)
         self.conv5 = nn.Conv2d(128, 128, 3)
-        self.fc1 = nn.Linear(128 * 22 * 22, 2000)   # nn.Linear(of parameters from conv layers, out_features)
-        self.fc2 = nn.Linear(2000, 84)
-        self.fc3 = nn.Linear(84, 10)  # last out_feature layer should correspond to how many classes we have
+        self.global_pool = nn.AdaptiveAvgPool2d(1)  #
+        self.fc = nn.Linear(128, 10)  # 128 features → 10 classes
 
     def forward(self, x):
-        # (B, 3, 32, 32)
-        x = F.relu(self.conv1(x)) # (B, 8, 30, 30)
-        x = F.relu(self.conv2(x)) # (B, 16, 28, 28)
-        x = F.relu(self.conv3(x)) # (B, 32, 26, 26)
-        x = F.relu(self.conv4(x)) # (B, 64, 24, 24)
-        x = F.relu(self.conv5(x)) # (B, 128, 22, 22)
-        # print("shape before flatten", x.shape)
-        x = torch.flatten(x, 1) # flatten all dimensions except batch (B, 16*5*5)
-        # print("shape after flatten", x.shape)
-        x = F.relu(self.fc1(x)) # (B, 120)
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x) # (B, 10)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = self.pool(x)
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.conv4(x))
+        x = self.pool(x)      # (B, 64, 12, 12)
+        x = F.relu(self.conv5(x)) # (B, 128, 3, 3)
+        x = self.global_pool(x)  # (B, 128, 1, 1)
+        x = torch.flatten(x, 1)  # (B, 128)
+        x = self.fc(x)           # (B, 10)
         return x
 
 
