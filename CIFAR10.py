@@ -58,11 +58,11 @@ class Net(nn.Module):
         super().__init__()
         self.pool = nn.MaxPool2d(2, 2) # kernel size, stride
 
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3) # convolution layyer will decrease the image size (called spatial dim) by a certain fixed amount at each layer. that fixed amount can be calculated using some formula that depends on kernel size, stride, padding
-        self.conv2 = nn.Conv2d(32, 64, 3) # out channels should increase as we go deeper, not sure why or how much at each step and overall
-        self.conv3 = nn.Conv2d(64, 64, 3)
-        self.conv4 = nn.Conv2d(64, 128, 3)
-        self.conv5 = nn.Conv2d(128, 128, 3)
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=32, kernel_size=3, padding=1) # convolution layyer will decrease the image size (called spatial dim) by a certain fixed amount at each layer. that fixed amount can be calculated using some formula that depends on kernel size, stride, padding
+        self.conv2 = nn.Conv2d(32, 64, 3, padding=1) # out channels should increase as we go deeper, not sure why or how much at each step and overall
+        self.conv3 = nn.Conv2d(64, 64, 3, padding=1)
+        self.conv4 = nn.Conv2d(64, 128, 3, padding=1)
+        self.conv5 = nn.Conv2d(128, 128, 3, padding=1)
         self.global_pool = nn.AdaptiveAvgPool2d(1)  #
         self.fc = nn.Linear(128, 10)  # 128 features → 10 classes
 
