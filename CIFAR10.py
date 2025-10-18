@@ -67,16 +67,20 @@ class Net(nn.Module):
         self.fc = nn.Linear(128, 10)  # 128 features → 10 classes
 
     def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = self.pool(x)
-        x = F.relu(self.conv3(x))
-        x = F.relu(self.conv4(x))
-        x = self.pool(x)      # (B, 64, 12, 12)
-        x = F.relu(self.conv5(x)) # (B, 128, 3, 3)
-        x = self.global_pool(x)  # (B, 128, 1, 1)
-        x = torch.flatten(x, 1)  # (B, 128)
-        x = self.fc(x)           # (B, 10)
+        # Input: (B, 3, 32, 32) - batch of RGB images
+        x = F.relu(self.conv1(x))      # (B, 32, 32, 32) - 32 feature maps, spatial dims preserved
+        print(f"After conv1: {x.shape}")
+        x = F.relu(self.conv2(x))      # (B, 64, 32, 32) - 64 feature maps, spatial dims preserved
+        print(f"After conv2: {x.shape}")
+        x = self.pool(x)               # (B, 64, 16, 16) - spatial dims halved by pooling
+        print(f"After pool1: {x.shape}")
+        x = F.relu(self.conv3(x))      # (B, 64, 16, 16) - same channels, spatial dims preserved
+        x = F.relu(self.conv4(x))      # (B, 128, 16, 16) - 128 feature maps, spatial dims preserved
+        x = self.pool(x)               # (B, 128, 8, 8) - spatial dims halved again
+        x = F.relu(self.conv5(x))      # (B, 128, 8, 8) - same channels, spatial dims preserved
+        x = self.global_pool(x)        # (B, 128, 1, 1) - global pooling reduces to 1×1
+        x = torch.flatten(x, 1)        # (B, 128) - flatten spatial dims, keep batch and channels
+        x = self.fc(x)                 # (B, 10) - fully connected layer outputs class logits
         return x
 
 
