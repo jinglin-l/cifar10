@@ -259,9 +259,8 @@ if __name__ == "__main__":
 
     plt.suptitle(f'Training Metrics - {exp_name}', fontsize=14, fontweight='bold')
     plt.tight_layout()
-    plt.savefig(f'training_metrics_{exp_name}.png', dpi=150, bbox_inches='tight')
-    print(f'Training metrics saved to training_metrics_{exp_name}.png')
-    plt.show()  # Display plot interactively
+    plt.savefig(f'training_metrics_{date}.png', dpi=150, bbox_inches='tight')
+    print(f'Training metrics saved to training_metrics_{date}.png')
     plt.close()
 
     # test the network on the whole dataset
