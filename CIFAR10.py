@@ -11,6 +11,7 @@ import torch.optim as optim
 
 import sys
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 
 # load and normalize CIFAR10 dataset
@@ -69,11 +70,8 @@ class Net(nn.Module):
     def forward(self, x):
         # Input: (B, 3, 32, 32) - batch of RGB images
         x = F.relu(self.conv1(x))      # (B, 32, 32, 32) - 32 feature maps, spatial dims preserved
-        print(f"After conv1: {x.shape}")
         x = F.relu(self.conv2(x))      # (B, 64, 32, 32) - 64 feature maps, spatial dims preserved
-        print(f"After conv2: {x.shape}")
         x = self.pool(x)               # (B, 64, 16, 16) - spatial dims halved by pooling
-        print(f"After pool1: {x.shape}")
         x = F.relu(self.conv3(x))      # (B, 64, 16, 16) - same channels, spatial dims preserved
         x = F.relu(self.conv4(x))      # (B, 128, 16, 16) - 128 feature maps, spatial dims preserved
         x = self.pool(x)               # (B, 128, 8, 8) - spatial dims halved again
@@ -134,6 +132,9 @@ if __name__ == "__main__":
     val_batch = next(iter(test_loader)) # get a single batch from the test set for validation
     loss_record = []
     val_loss_record = []
+    train_acc_record = []
+    val_acc_record = []
+    lr_record = []
 
     # Initialize gradient tracking dictionaries
     grad_records = {}
@@ -198,11 +199,70 @@ if __name__ == "__main__":
                 correct = (predicted == labels).sum().item()
                 val_accuracy = 100 * correct / total
 
+                # track metrics for plotting
+                train_acc_record.append(train_accuracy)
+                val_acc_record.append(val_accuracy)
+                lr_record.append(optimizer.param_groups[0]["lr"])
+
                 print(f'[{epoch + 1}, {i + 1:5d}] loss: {final_loss :.3f} val_loss: {val_loss:.3f} train_acc: {train_accuracy:.2f}% val_acc: {val_accuracy:.2f}% lr: {optimizer.param_groups[0]["lr"]:.6f}')
 
         scheduler.step(val_loss) # step the scheduler based on validation loss
 
     print('Finished Training')
+
+    # plot loss curves
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    # Plot 1: Loss curves
+    axes[0, 0].plot(loss_record, label='Training Loss', alpha=0.7)
+    axes[0, 0].plot(val_loss_record, label='Validation Loss', alpha=0.7)
+    axes[0, 0].set_xlabel('Checkpoint (every 20 batches)')
+    axes[0, 0].set_ylabel('Loss')
+    axes[0, 0].set_title('Loss Over Time')
+    axes[0, 0].legend()
+    axes[0, 0].grid(True, alpha=0.3)
+
+    # Plot 2: Accuracy curves
+    axes[0, 1].plot(train_acc_record, label='Training Accuracy', alpha=0.7)
+    axes[0, 1].plot(val_acc_record, label='Validation Accuracy', alpha=0.7)
+    axes[0, 1].set_xlabel('Checkpoint (every 20 batches)')
+    axes[0, 1].set_ylabel('Accuracy (%)')
+    axes[0, 1].set_title('Accuracy Over Time')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True, alpha=0.3)
+
+    # Plot 3: Learning rate over time
+    axes[1, 0].plot(lr_record, color='green', alpha=0.7)
+    axes[1, 0].set_xlabel('Checkpoint (every 20 batches)')
+    axes[1, 0].set_ylabel('Learning Rate')
+    axes[1, 0].set_title('Learning Rate Schedule')
+    axes[1, 0].grid(True, alpha=0.3)
+    axes[1, 0].set_yscale('log')  # log scale helps visualize LR changes
+
+    # Plot 4: Train-Val gap (overfitting indicator)
+    loss_gap = [val - train for train, val in zip(loss_record, val_loss_record)]
+    acc_gap = [train - val for train, val in zip(train_acc_record, val_acc_record)]
+
+    ax4 = axes[1, 1]
+    ax4.plot(loss_gap, label='Loss Gap (Val - Train)', alpha=0.7, color='red')
+    ax4.set_xlabel('Checkpoint (every 20 batches)')
+    ax4.set_ylabel('Loss Gap', color='red')
+    ax4.tick_params(axis='y', labelcolor='red')
+    ax4.grid(True, alpha=0.3)
+    ax4.axhline(y=0, color='black', linestyle='--', alpha=0.3)
+
+    ax4_twin = ax4.twinx()
+    ax4_twin.plot(acc_gap, label='Acc Gap (Train - Val)', alpha=0.7, color='blue')
+    ax4_twin.set_ylabel('Accuracy Gap (%)', color='blue')
+    ax4_twin.tick_params(axis='y', labelcolor='blue')
+    ax4.set_title('Train-Val Gap (Overfitting Indicator)')
+
+    plt.suptitle(f'Training Metrics - {exp_name}', fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(f'training_metrics_{exp_name}.png', dpi=150, bbox_inches='tight')
+    print(f'Training metrics saved to training_metrics_{exp_name}.png')
+    plt.show()  # Display plot interactively
+    plt.close()
 
     # test the network on the whole dataset
     correct = 0
